@@ -1,0 +1,40 @@
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  publish:
+    name: Publish
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+      with:
+        fetch-depth: 0
+        ref: ${{ github.ref }}
+    - name: Get the tag
+      id: get_tag
+      run: echo ::set-output name=RELEASE_TAG::${GITHUB_REF#refs/tags/}
+    - name: Print the tag
+      run: echo "Attempting to publish a new tag to the crates.io --> ${{ steps.get_tag.outputs.RELEASE_TAG }}"
+    - name: Check if release is already available
+      id: crate_version
+      run: |
+        crate_version=$(cargo metadata --no-deps --format-version 1 | jq '.packages[].version' -r)
+        echo "::set-output name=version::$crate_version"
+        echo "Checking if $crate_version is already published..."
+        if cargo search --limit 1 "${{ github.event.repository.name }}@$crate_version" > /dev/null; then
+          echo "$crate_version is already published on crates.io, skipping publish."
+          exit 1
+        else
+          echo "$crate_version is not yet published, proceeding with publish."
+        fi
+    - name: Publish to crates.io
+      if: steps.crate_version.outputs.version != ''
+      uses: actions-rs/cargo@v1
+      with:
+        command: publish
+        args: --token ${{ secrets.CRATES_IO_UPDATE_TOKEN }}
